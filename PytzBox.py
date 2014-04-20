@@ -116,9 +116,7 @@ class PytzBox:
                                      headers={'Content-Type': 'text/xml; charset="utf-8"',
                                               'SOAPACTION': self.__soapaction_phonebooklist},
                                      verify=self.__sslverify)
-        except socket, e:
-            raise self.BoxUnreachableException(str(e))
-        except IOError, e:
+        except requests.exceptions.ConnectionError, e:
             raise self.BoxUnreachableException(str(e))
         except Exception, e:
             raise self.RequestFailedException(str(e))
@@ -143,9 +141,7 @@ class PytzBox:
                                      headers={'Content-Type': 'text/xml; charset="utf-8"',
                                               'SOAPACTION': self.__soapaction_phonebook},
                                      verify=self.__sslverify)
-        except socket, e:
-            raise self.BoxUnreachableException(str(e))
-        except IOError, e:
+        except requests.exceptions.ConnectionError, e:
             raise self.BoxUnreachableException(str(e))
         except Exception, e:
             raise self.RequestFailedException(str(e))
