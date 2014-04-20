@@ -1,10 +1,7 @@
 #!/usr/bin/env python
 
-import urllib
 import re
 import socket
-import hashlib
-import mimetools
 import xml.sax
 import requests
 from requests.auth import HTTPDigestAuth
@@ -73,6 +70,7 @@ class PytzBox:
                     self.contact_name = ""
                 self.key = name
 
+            # noinspection PyUnusedLocal
             def endElement(self, name):
                 self.key = None
 
@@ -144,8 +142,7 @@ class PytzBox:
                                      data=self.__soapenvelope_phonebook.format(NewPhonebookId=id),
                                      headers={'Content-Type': 'text/xml; charset="utf-8"',
                                               'SOAPACTION': self.__soapaction_phonebook},
-                                     verify=self.__sslverify
-            )
+                                     verify=self.__sslverify)
         except socket, e:
             raise self.BoxUnreachableException(str(e))
         except IOError, e:
@@ -167,7 +164,7 @@ class PytzBox:
         except Exception, e:
             raise self.RequestFailedException(str(e))
         else:
-            xml_phonebook = response = response.content
+            xml_phonebook = response.content
 
         return self.__analyzeFritzboxPhonebook(xml_phonebook)
 
