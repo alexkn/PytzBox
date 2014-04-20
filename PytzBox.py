@@ -34,6 +34,7 @@ RE_IPV6 += "fe08:(:[0-9a-fA-F]{1,4}){2,2}%[0-9a-zA-Z]{1,}|"
 RE_IPV6 += "::(ffff(:0{1,4}){0,1}:){0,1}${RE_IPV4}|"
 RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,4}:${RE_IPV4}"
 
+
 class PytzBox:
     __password = False
     __host = False
@@ -137,14 +138,16 @@ class PytzBox:
         else:
             if response.status_code == 200:
                 response = response.content
-                phonbook_ids = re.findall(r'<NewPhonebookList>(\d*)</NewPhonebookList>', response)
+                phonbook_ids = []
 
-                if phonbook_ids:
-                    return list(set(phonbook_ids))
+                for this_line in re.findall(r'<NewPhonebookList>([\d,]*)</NewPhonebookList>', response):
+                    for this_id in this_line.split(','):
+                        phonbook_ids.append(int(this_id))
+
+                return list(set(phonbook_ids))
+
             else:
                 raise self.LoginFailedException('Login failed with status code: %s' % response.status_code)
-
-        return False
 
     def getPhonebook(self, id=0):
 
