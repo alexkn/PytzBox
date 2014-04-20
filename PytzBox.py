@@ -63,8 +63,7 @@ class PytzBox:
 
         self.__password = password
         self.__host = host
-        if username:
-            self.__user = username
+        self.__user = username
 
         if re.match(RE_IPV6, self.__host):
             self.__host = "[%s]" % self.__host
