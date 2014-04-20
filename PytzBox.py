@@ -21,6 +21,18 @@ options:
 
 """
 
+RE_IPV6 = "([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|"
+RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,7}:|"
+RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|"
+RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|"
+RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|"
+RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|"
+RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|"
+RE_IPV6 += "[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|"
+RE_IPV6 += ":((:[0-9a-fA-F]{1,4}){1,7}|:)|"
+RE_IPV6 += "fe08:(:[0-9a-fA-F]{1,4}){2,2}%[0-9a-zA-Z]{1,}|"
+RE_IPV6 += "::(ffff(:0{1,4}){0,1}:){0,1}${RE_IPV4}|"
+RE_IPV6 += "([0-9a-fA-F]{1,4}:){1,4}:${RE_IPV4}"
 
 class PytzBox:
     __password = False
@@ -53,6 +65,9 @@ class PytzBox:
         self.__host = host
         if username:
             self.__user = username
+
+        if re.match(RE_IPV6, self.__host):
+            self.__host = "[%s]" % self.__host
 
     def __analyzeFritzboxPhonebook(self, xml_phonebook):
 
