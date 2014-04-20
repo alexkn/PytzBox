@@ -11,7 +11,7 @@ __doc__ = """
 PytzBox
 
 usage:
-  ./PytzBox.py getphonebook [--host=<fritz.box>] [--username=<user>] [--password=<pass>] [--id=<int>]
+  ./PytzBox.py getphonebook [--host=<fritz.box>] [--username=<user>] [--password=<pass>] [--id=<int>|--all]
   ./PytzBox.py getphonebooklist [--host=<fritz.box>] [--username=<user>] [--password=<pass>]
 
 options:
@@ -152,6 +152,14 @@ class PytzBox:
 
     def getPhonebook(self, id=0):
 
+        if id == -1:
+            result = dict()
+            for this_id in self.getPhonebookList():
+                if this_id < 0:
+                    continue
+                result.update(self.getPhonebook(id=this_id))
+            return result
+
         try:
             response = requests.post(self.__url_contact.format(host=self.__host),
                                      auth=HTTPDigestAuth(self.__user, self.__password),
@@ -202,6 +210,12 @@ if __name__ == '__main__':
     box = PytzBox(username=arguments['--username'], password=arguments['--password'], host=arguments['--host'])
 
     if arguments['getphonebook']:
-        pprint(box.getPhonebook(id=arguments['--id'] is not False and arguments['--id'] or 0))
+        if arguments['--all']:
+            phone_book_id = -1
+        elif arguments['--id'] is not False:
+            phone_book_id = arguments['--id']
+        else:
+            phone_book_id = 0
+        pprint(box.getPhonebook(id=phone_book_id))
     elif arguments['getphonebooklist']:
         pprint(box.getPhonebookList())
