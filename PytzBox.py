@@ -184,7 +184,6 @@ class PytzBox:
             else:
                 raise self.RequestFailedException('Request failed with status code: %s' % response.status_code)
 
-
         try:
             response = requests.get(phonbook_urls[0])
         except socket, e:
