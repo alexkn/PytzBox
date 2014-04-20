@@ -153,6 +153,8 @@ class PytzBox:
             response = response.content
             phonbook_urls = re.findall(r'<NewPhonebookURL>(.*)</NewPhonebookURL>', response)
             sids = re.findall(r'sid=([0-9a-fA-F]*)', response)
+            if not len(sids):
+                raise self.LoginFailedException()
             self.__sid = sids[0]
 
         try:
