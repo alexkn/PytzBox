@@ -145,9 +145,10 @@ class PytzBox:
                         phonbook_ids.append(int(this_id))
 
                 return list(set(phonbook_ids))
-
+            elif response.status_code == 401:
+                raise self.LoginFailedException()
             else:
-                raise self.LoginFailedException('Login failed with status code: %s' % response.status_code)
+                raise self.RequestFailedException('Request failed with status code: %s' % response.status_code)
 
     def getPhonebook(self, id=0):
 
@@ -163,12 +164,18 @@ class PytzBox:
         except Exception, e:
             raise self.RequestFailedException(str(e))
         else:
-            response = response.content
-            phonbook_urls = re.findall(r'<NewPhonebookURL>(.*)</NewPhonebookURL>', response)
-            sids = re.findall(r'sid=([0-9a-fA-F]*)', response)
-            if not len(sids):
+            if response.status_code == 200:
+                response = response.content
+                phonbook_urls = re.findall(r'<NewPhonebookURL>(.*)</NewPhonebookURL>', response)
+                sids = re.findall(r'sid=([0-9a-fA-F]*)', response)
+                if not len(sids):
+                    raise self.LoginFailedException()
+                self.__sid = sids[0]
+            elif response.status_code == 401:
                 raise self.LoginFailedException()
-            self.__sid = sids[0]
+            else:
+                raise self.RequestFailedException('Request failed with status code: %s' % response.status_code)
+
 
         try:
             response = requests.get(phonbook_urls[0])
@@ -195,6 +202,6 @@ if __name__ == '__main__':
     box = PytzBox(username=arguments['--username'], password=arguments['--password'], host=arguments['--host'])
 
     if arguments['getphonebook']:
-        pprint(box.getPhonebook(id=arguments['--id'] and arguments['--id'] or 0))
+        pprint(box.getPhonebook(id=arguments['--id'] is not False and arguments['--id'] or 0))
     elif arguments['getphonebooklist']:
         pprint(box.getPhonebookList())
