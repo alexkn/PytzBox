@@ -1,11 +1,12 @@
 
 import urllib
-import urllib2
 import re
 import socket
 import hashlib
 import mimetools
 import xml.sax
+import requests
+from requests.auth import HTTPDigestAuth
 
 
 __doc__="""
@@ -28,22 +29,16 @@ class PytzBox:
     __host = False
     __user = False
     __sid = None
-    __protocol = 'http'
-    __login_requirement = 0
+    __sslverify = False
 
-    __url_login_webcm        = '{protocol}://{host}/cgi-bin/webcm'
-    __url_login_fmwcfg       = '{protocol}://{host}/cgi-bin/firmwarecfg'
-    __url_phonebook_list     = '{protocol}://{host}/fon_num/fonbook_select.lua?sid={sid}'
-    __url_sid_lua_challenge  = '{protocol}://{host}//login_sid.lua'
-    __data_sid_challenge     = 'getpage=../html/login_sid.xml'
-    __data_login_legacy      = 'getpage=../html/de/menus/menu2.html&errorpage=../html/index.html&var:lang=de&var:pagename=home&var:menu=home&=&login:command/password={password}'
-    __data_login_sid         = 'login:command/response={response}&getpage=../html/login_sid.xml'
-    __url_file_download      = '{protocol}://{host}/nas/cgi-bin/luacgi_notimeout?sid={sid}&script=%2fhttp_file_download.lua&command=httpdownload&cmd_files={path}'
-
-    class LoginRequiredException(Exception): pass
-    class UnkownLoginVersionException(Exception): pass
+    __url_contact                   = 'https://{host}:49443/upnp/control/x_contact'
+    __url_file_download             = 'https://{host}:49443{imageurl}&sid={sid}'
+    __soapaction_phonebooklist      = 'urn:dslforum-org:service:X_AVM-DE_OnTel:1#GetPhonebookList'
+    __soapenvelope_phonebooklist    = '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetPhonebookList xmlns:u="urn:dslforum-org:service:X_AVM-DE_OnTel:1"></u:GetPhonebookList></s:Body></s:Envelope>'
+    __soapaction_phonebook          = 'urn:dslforum-org:service:X_AVM-DE_OnTel:1#GetPhonebook'
+    __soapenvelope_phonebook        = '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetPhonebook xmlns:u="urn:dslforum-org:service:X_AVM-DE_OnTel:1"><NewPhonebookId>{NewPhonebookId}</NewPhonebookId></u:GetPhonebook></s:Body></s:Envelope>'
+    
     class BoxUnreachableException(Exception): pass
-    class UnsupportedCharInPasswordException(Exception): pass
     class LoginFailedException(Exception): pass
     class RequestFailedException(Exception): pass
 
@@ -55,187 +50,6 @@ class PytzBox:
         self.__host = host
         if username:
             self.__user = username
-
-        self.__login_requirement = self.__requireLogin()
-
-        if self.__login_requirement and self.__password is False:
-            raise self.LoginRequiredException('no password given')
-
-
-    def __requireLogin(self):
-
-        try:
-            response = urllib2.urlopen(
-                self.__url_login_webcm.format(protocol=self.__protocol, host=self.__host),
-                self.__data_sid_challenge
-            )
-        except socket.error, e:
-            raise self.BoxUnreachableException(str(e))
-        except IOError, e:
-            raise self.BoxUnreachableException(str(e))
-        else:
-            if response.getcode() != 200:
-                # 1st style
-                return 1
-            else:
-                # 2nd style
-                is_write_access_match = re.search(r".*<iswriteaccess>(\d)</iswriteaccess>.*", response.read(), re.MULTILINE | re.IGNORECASE)
-                sid_match = re.search('<SID>(.*?)</SID>', response.read())
-                if is_write_access_match:
-                    write_access_result = int(is_write_access_match.group(1))
-                    if write_access_result == 0:
-                        if sid_match and int(sid_match.group(1)) != 0:
-                            self.__sid = sid_match.group(1)
-                            return 0
-                        else:
-                            return 2
-        try:
-            response = urllib2.urlopen(
-                self.__url_sid_lua_challenge.format(protocol=self.__protocol, host=self.__host)
-            )
-        except socket.error, e:
-            raise self.BoxUnreachableException(str(e))
-        except IOError, e:
-            raise self.BoxUnreachableException(str(e))
-        else:
-            is_session_info_match = re.search(r".*<SessionInfo>.*</SessionInfo>.*", response.read(), re.MULTILINE | re.IGNORECASE)
-            if is_session_info_match:
-                # 3rd style
-                sid_match = re.search('<SID>(.*?)</SID>', response.read())
-                if sid_match and int(sid_match.group(1)) != 0:
-                    self.__sid = sid_match.group(1)
-                    return 0
-                else:
-                    return 3
-            print response.read()
-
-        return 0
-
-
-    def __loginSid(self):
-
-        # request challenge
-        try:
-            if self.__login_requirement == 2:
-                response = urllib2.urlopen(
-                    self.__url_login_webcm.format(protocol=self.__protocol, host=self.__host),
-                    self.__data_sid_challenge
-                )
-            elif self.__login_requirement == 3:
-                response = urllib2.urlopen(
-                    self.__url_sid_lua_challenge.format(protocol=self.__protocol, host=self.__host)
-                )
-        except socket.error, e:
-            raise self.BoxUnreachableException(str(e))
-        except IOError, e:
-            raise self.BoxUnreachableException(str(e))
-        else:
-            if response.getcode() != 200:
-                raise self.LoginFailedException('unknown returncode')
-
-        # get challenge string
-        challenge_match = re.search(r".*<Challenge>([A-Za-z0-9]*)</Challenge>.*", response.read(), re.MULTILINE | re.IGNORECASE)
-        if challenge_match:
-            challenge_string = challenge_match.group(1)
-        else:
-            raise self.LoginFailedException('challenge string not found')
-
-        # Create a UTF-16LE string from challenge + '-' + password
-        try:
-            challenge_bf = ("%s-%s" % (challenge_string, str(self.__password))).decode('iso-8859-1').encode('utf-16le')
-        except UnicodeError:
-            #non ISO-8859-1 characters will except here (e.g. EUR)
-            raise self.UnsupportedCharInPasswordException()
-
-        # Calculate the MD5 hash
-        m = hashlib.md5()
-        m.update(challenge_bf)
-
-        # byte response string from challenge + '-' + md5_hex_value
-        response_bf = "%s-%s" % (challenge_string, m.hexdigest().lower())
-
-        # Answer the challenge
-        try:
-            if self.__login_requirement == 2:
-                response = urllib2.urlopen(
-                    self.__url_login_webcm.format(protocol=self.__protocol, host=self.__host),
-                    self.__data_login_sid.format(response=response_bf)
-                )
-            elif self.__login_requirement == 3:
-                username=''
-                if self.__user:
-                    username=self.__user
-                response = urllib2.urlopen(
-                    self.__url_sid_lua_challenge.format(protocol=self.__protocol, host=self.__host),
-                    urllib.urlencode(dict(response=response_bf, username=username))
-                )
-        except socket.error, e:
-            raise self.BoxUnreachableException(str(e))
-        except IOError, e:
-            raise self.BoxUnreachableException(str(e))
-        else:
-            if response.getcode() != 200:
-                raise self.LoginFailedException('unknown returncode')
-
-        # search sid
-        search = re.search('<SID>(.*?)</SID>', response.read())
-        if search:
-            self.__sid = search.group(1)
-            try:
-                if int(self.__sid) == 0:
-                    raise self.LoginFailedException('could not login (sid is %s)' % self.__sid)
-            except ValueError:
-                pass
-            return True
-        else:
-            return False
-
-
-    def __loginLegacy(self):
-
-        try:
-            response = urllib2.urlopen(
-                self.__url_login_webcm.format(protocol=self.__protocol, host=self.__host),
-                self.__data_login_legacy.format(password=self.__password)
-            )
-        except socket.error, e:
-            raise self.BoxUnreachableException(str(e))
-        except IOError, e:
-            raise self.BoxUnreachableException(str(e))
-        else:
-            response.getcode()
-            if response.getcode() == 200:
-                try:
-                    match = re.search('<p class="errorMessage">(.*?)</p>', response.read())
-                    if match:
-                        return False
-                except Exception, e:
-                    raise self.LoginFailedException(str(e))
-                else:
-                    self.__sid = False
-                    return True
-            else:
-                raise self.LoginFailedException('unknown returncode')
-
-
-    class __encodeMultipartFormdata:
-
-        content_type = None
-        body = None
-
-        def __init__(self, fields):
-            boundary = mimetools.choose_boundary()
-            end_line = '\r\n'
-            result = list()
-            for (key, value) in fields:
-                result.append('--' + boundary)
-                result.append('Content-Disposition: form-data; name="%s"' % key)
-                result.append('')
-                result.append(value)
-            result.append('--' + boundary + '--')
-            result.append('')
-            self.body = end_line.join(result)
-            self.content_type = 'multipart/form-data; boundary=%s' % boundary
 
 
     def __analyzeFritzboxPhonebook(self, xml_phonebook):
@@ -280,93 +94,53 @@ class PytzBox:
 
         return handler.phone_book
 
+    def getDownloadUrl(self, imageurl):
+        try:
+            return self.__url_file_download.format(
+                    host=self.__host,
+                    imageurl=imageurl,
+                    sid=self.__sid
+                )
+        except Exception, e:
+            print e
 
-
-
-    def sid(self):
-
-        if self.__sid is not None:
-            return self.__sid
-        else:
-            return False
-
-
-    def login(self):
-        if self.__login_requirement is False:
-            pass
-        elif self.__login_requirement == 3:
-            self.__loginSid()
-        elif self.__login_requirement == 2:
-            self.__loginSid()
-        elif self.__login_requirement == 1:
-            self.__loginLegacy()
-        else: raise self.UnkownLoginVersionException(self.__login_requirement)
-
-        return self
-
-
-    def getDownloadUrl(self, base):
-        if base.startswith('file:///var/media/ftp/'):
-            file_path = "/%s://" % base.lstrip('file:///var/media/ftp/')
-            try:
-                return self.__url_file_download.format(
-                        protocol=urllib.quote(self.__protocol),
-                        host=urllib.quote(self.__host),
-                        sid=urllib.quote(self.__sid),
-                        path=urllib.quote(file_path)
-                    )
-            except Exception, e:
-                print e
-        else:
-            return base
 
     def getPhonebookList(self):
-        if self.__sid is None:
-            raise self.LoginRequiredException()
-
-        request = urllib2.Request(
-            self.__url_phonebook_list.format(protocol=self.__protocol, host=self.__host, sid=self.__sid)
-        )
-
+        
         try:
-            response = urllib2.urlopen(request, timeout=5)
+            response = requests.post(self.__url_contact.format(host=self.__host), 
+                    auth=HTTPDigestAuth(self.__user, self.__password),
+                    data=self.__soapenvelope_phonebooklist,
+                    headers={'Content-Type': 'text/xml; charset="utf-8"', 'SOAPACTION': self.__soapaction_phonebooklist},
+                    verify=self.__sslverify
+                    )
         except socket, e:
             raise self.BoxUnreachableException(str(e))
         except IOError, e:
             raise self.BoxUnreachableException(str(e))
         except Exception, e:
             raise self.RequestFailedException(str(e))
-        else:
-            response =  response.read()
+        else:            
+            if response.status_code == 200:
+                response = response.content                
+                phonbook_ids = re.findall(r'<NewPhonebookList>(\d*)</NewPhonebookList>', response)
 
-            phonbook_ids = re.findall(r'uiBookid:(\d*)', response)
-
-            if phonbook_ids:
-                return list(set(phonbook_ids))
+                if phonbook_ids:
+                    return list(set(phonbook_ids))
+            else:
+                raise self.LoginFailedException('Login failed with status code: %s' % response.status_code)
 
         return False
 
     def getPhonebook(self, id=0, name='Phonebook'):
 
-        if self.__sid is None:
-            raise self.LoginRequiredException()
-
-        data = self.__encodeMultipartFormdata( (
-            ('sid', self.__sid),
-            ('PhonebookId', str(id)),
-            ('PhonebookExportName', str(name)),
-            ('PhonebookExport', '')
-            )
-        )
-
-        request = urllib2.Request(
-            self.__url_login_fmwcfg.format(protocol=self.__protocol, host=self.__host),
-            data.body,
-            headers={'Content-Type': data.content_type}
-        )
-
         try:
-            response = urllib2.urlopen(request, timeout=5)
+            response = requests.post(self.__url_contact.format(host=self.__host), 
+                    auth=HTTPDigestAuth(self.__user, self.__password),
+                    data=self.__soapenvelope_phonebook.format(NewPhonebookId=id),
+                    headers={'Content-Type': 'text/xml; charset="utf-8"', 'SOAPACTION': self.__soapaction_phonebook},
+                    verify=self.__sslverify
+                    )
         except socket, e:
             raise self.BoxUnreachableException(str(e))
         except IOError, e:
@@ -374,8 +148,22 @@ class PytzBox:
         except Exception, e:
             raise self.RequestFailedException(str(e))
         else:
-            xml_phonebook =  response.read()
+            response = response.content
+            phonbook_urls = re.findall(r'<NewPhonebookURL>(.*)</NewPhonebookURL>', response)
+            sids = re.findall(r'sid=([0-9a-fA-F]*)', response)
+            self.__sid = sids[0]
 
+        try:
+            response = requests.get(phonbook_urls[0])
+        except socket, e:
+            raise self.BoxUnreachableException(str(e))
+        except IOError, e:
+            raise self.BoxUnreachableException(str(e))
+        except Exception, e:
+            raise self.RequestFailedException(str(e))
+        else:
+            xml_phonebook = response = response.content
+        
         return self.__analyzeFritzboxPhonebook(xml_phonebook)
 
 
@@ -388,7 +176,7 @@ if __name__ == '__main__':
 
     from pprint import pprint
 
-    box = PytzBox(username=arguments['--username'], password=arguments['--password'], host=arguments['--host']).login()
+    box = PytzBox(username=arguments['--username'], password=arguments['--password'], host=arguments['--host'])
 
     if arguments['getphonebook']:
         pprint( box.getPhonebook(id=arguments['--id'] and arguments['--id'] or 0) )
