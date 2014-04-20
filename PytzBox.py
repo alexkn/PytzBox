@@ -39,7 +39,6 @@ class PytzBox:
     __soapenvelope_phonebook        = '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><u:GetPhonebook xmlns:u="urn:dslforum-org:service:X_AVM-DE_OnTel:1"><NewPhonebookId>{NewPhonebookId}</NewPhonebookId></u:GetPhonebook></s:Body></s:Envelope>'
     
     class BoxUnreachableException(Exception): pass
-    class UnsupportedCharInPasswordException(Exception): pass
     class LoginFailedException(Exception): pass
     class RequestFailedException(Exception): pass
 
@@ -177,7 +176,7 @@ if __name__ == '__main__':
 
     from pprint import pprint
 
-    box = PytzBox(username=arguments['--username'], password=arguments['--password'], host=arguments['--host']).login()
+    box = PytzBox(username=arguments['--username'], password=arguments['--password'], host=arguments['--host'])
 
     if arguments['getphonebook']:
         pprint( box.getPhonebook(id=arguments['--id'] and arguments['--id'] or 0) )
